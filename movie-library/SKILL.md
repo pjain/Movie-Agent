@@ -1,131 +1,210 @@
 ---
-name: movie-library
-description: movie discovery and personal watch tracking for openclaw, hermes, and compatible agents. use when the user asks to find movies, compare imdb or rotten tomatoes ratings, locate where a movie streams in their geography, add movies to a watchlist, mark movies watched, remove movies from lists, recommend similar movies, or find films by director, actor, genre, or production house. designed for agents with existing web/api/file tools and local json persistence rather than bundled api execution.
+name: movie-agent
+description: international movie and television discovery plus personal watch tracking for OpenClaw, Hermes, and compatible agents. Use when the user asks to find films, TV shows, seasons, episodes, IMDb or Rotten Tomatoes ratings, where to watch by geography, add titles to a watchlist, mark movies or shows watched, rate titles with thumbs up/down or five-star ratings, remove titles from lists, recommend similar titles, or find work by director, actor, creator, network, streamer, studio, production house, genre, country, language, or franchise.
 ---
 
-# Movie Library
+# Movie Agent
 
 ## Purpose
 
-Use this skill to manage a user's movie discovery and watch history. The skill instructs the agent to use available web/API tools for movie metadata, ratings, streaming availability, recommendations, and filmography search, while storing the user's watchlist and watched history in a local JSON file.
+Use this skill to manage international movie and television discovery, ratings, streaming availability, watchlists, watched history, and recommendations. The skill is instruction-first: use the host agent's existing web, API, file-read, and file-write tools. Do not require bundled scripts for normal use.
 
-Do not run shell commands or execute bundled API scripts for normal use. Prefer the agent's existing web, API, file-read, and file-write tools.
+This skill supports:
+
+- Movies, short films, documentaries, and specials.
+- TV shows, miniseries, anime, reality TV, web series, seasons, and episodes.
+- International titles, alternate titles, original-language titles, country-of-origin filters, and geography-specific streaming availability.
+- User ratings using either thumbs up/down or a normalized 0.5-5.0 star scale.
 
 ## First-run setup
 
-On the first use, establish the user's default geography for streaming availability.
+On first use, check whether a local data file exists at the configured path. Default path: `~/.movie-agent/library.json`.
 
-1. Check whether a local data file already exists at the configured path. Default path: `~/.movie-library/movies.json`.
-2. If no profile exists, ask: "What geography should I use by default for streaming availability? You can also tell me later when you are temporarily in another geography."
-3. Store the answer as `profile.default_region` using a stable country/region code when possible, such as `US`, `IN`, or `GB`.
-4. If the user says they are temporarily in another geography, use that region for the current lookup only unless they explicitly ask to change their default.
+If no profile exists, ask:
 
-Use `references/schemas.md` for the JSON schema and examples.
+> What geography should I use by default for streaming availability? You can also tell me later when you are temporarily in another geography.
+
+Store the answer as `profile.default_region` using a stable country/region code when possible, such as `US`, `IN`, `GB`, `CA`, `JP`, `KR`, or `FR`.
+
+If the user says they are temporarily in another geography, use that region for the current lookup only unless they explicitly ask to change their default.
+
+## Core entity model
+
+Use the neutral term **title** for both movies and television.
+
+Every stored title must include `media_type` where possible:
+
+- `movie`
+- `tv`
+- `season`
+- `episode`
+- `special`
+- `unknown`
+
+For TV, distinguish show-level, season-level, and episode-level actions:
+
+- "Add Shogun" usually means add the show.
+- "I watched Shogun season 1" means mark season 1 watched.
+- "I watched episode 3 of Shogun" means mark that episode watched when episode tracking is supported.
+- If the level is ambiguous and the action affects storage, ask a concise clarification.
 
 ## Data source preferences
 
-Use the best available tool/provider in this order. If a preferred source is unavailable, use the next reliable source and disclose the limitation briefly.
+Use the best available provider in this order. If a preferred source is unavailable, use the next reliable source and briefly disclose the limitation.
 
-1. **Movie metadata, IDs, cast, crew, genres, production companies:** TMDB or another structured movie database.
-2. **IMDb and Rotten Tomatoes ratings:** OMDb if available, because it can return IMDb ratings and Rotten Tomatoes ratings in one response when matched correctly. Otherwise use trustworthy web/API sources and cite or name the source.
+1. **Canonical metadata for movies and TV:** TMDB or another structured movie/TV database. Capture stable IDs, original title/name, release/first-air year, country, original language, genres, cast, crew, creators, networks, production companies, seasons, and episodes.
+2. **IMDb and Rotten Tomatoes ratings:** OMDb when available, because it can return IMDb ratings and Rotten Tomatoes ratings in one response when matched by IMDb ID. Otherwise use a reliable structured source or current web source.
 3. **Where to watch by geography:** Watchmode, JustWatch-compatible data, TMDB watch providers, or another current streaming availability API. Availability changes often; always perform a fresh lookup unless the user explicitly asks to use cached data.
-4. **Recommendations:** Combine structured "similar/recommendations" endpoints, genre/person/company metadata, the local watched list, watchlist exclusions, and the user's stated preferences.
+4. **International enrichment:** Use original-language title, alternate titles, country of origin, release/air dates by region, and local provider names when available.
+5. **Recommendations:** Combine structured similar/recommendation endpoints, genre/person/company/network/country/language metadata, the local watched list, watchlist exclusions, and the user's stated preferences.
 
-Never fabricate ratings or availability. If a rating or provider result is missing, return `unknown` or explain that the source did not provide it.
+Never fabricate ratings, availability, seasons, episodes, or provider support. Use `unknown` when a source does not provide the field.
 
 ## Local storage rules
 
-Maintain a local JSON file at `~/.movie-library/movies.json` unless the user or runtime config specifies a different path.
+Maintain a local JSON file at `~/.movie-agent/library.json` unless the user or runtime config specifies a different path.
 
 - Create the file if it does not exist.
 - Preserve existing entries and unknown fields.
-- Normalize titles with year and stable external IDs when available.
-- De-duplicate using a stable ID first, then normalized title + year.
-- Use ISO dates such as `2026-05-29` for `added_at`, `watched_at`, and `updated_at`.
-- When writing the file, make a best effort to preserve valid JSON formatting and avoid destructive overwrites.
-- If filesystem access is unavailable, maintain a response-local representation and tell the user persistence is unavailable.
+- Normalize titles with media type, year, stable external IDs, original language, and country where available.
+- De-duplicate by stable ID first, then `media_type + normalized title/name + year`.
+- Use ISO dates such as `2026-06-01` for `added_at`, `watched_at`, `rated_at`, and `updated_at`.
+- Read the existing file before writing. Avoid destructive overwrites.
+- If filesystem access is unavailable, maintain a response-local representation and state that persistence is unavailable.
+
+Consult `references/schemas.md` before writing records.
+
+## Rating system
+
+Users may rate movies, shows, seasons, or episodes with thumbs up/down, explicit stars, or natural language.
+
+Store both raw input and normalized values:
+
+- `rating.raw`: original user phrase, such as `I loved it`, `thumbs up`, or `4/5`.
+- `rating.scale`: `stars_5`, `thumbs`, or `inferred_stars_5`.
+- `rating.stars`: number from 0.5 to 5.0 when available.
+- `rating.thumbs`: `up`, `down`, or `neutral` when available.
+- `rating.sentiment`: `positive`, `mixed`, `negative`, or `neutral`.
+
+Interpret explicit ratings directly:
+
+- `5 stars`, `5/5`, `five stars` -> 5.0 stars.
+- `4 stars`, `4/5` -> 4.0 stars.
+- `3.5 stars`, `3.5/5` -> 3.5 stars.
+- `thumbs up` -> thumbs `up`; if a star value is needed, treat as 4.0.
+- `thumbs down` -> thumbs `down`; if a star value is needed, treat as 2.0.
+
+Interpret these natural-language ratings when the phrase clearly refers to the title being watched/rated:
+
+- `I loved it`, `loved it`, `love it` -> 5.0 stars, positive.
+- `Fantastic` -> 4.0 stars, positive.
+- `Good` -> 3.5 stars, positive/mixed.
+- `Ok`, `Okay` -> 3.0 stars, mixed/neutral.
+
+Do not over-infer vague reactions. If the phrase is ambiguous, store `rating.raw` and ask for clarification only if a precise rating is required for the current task.
+
+Consult `references/rating-guide.md` for more examples.
 
 ## Task workflows
 
-### Find Movie
+### Find title
 
-Input may be one movie title or multiple titles. For each movie:
+Input may be one title or multiple titles. For each title:
 
-1. Resolve the title to the most likely movie. If multiple plausible matches exist, use the user's context; if still ambiguous, show the top few candidates with year/director and ask which one.
-2. Retrieve metadata: title, year, director, primary cast, genre, runtime, plot summary, and stable IDs where available.
-3. Retrieve IMDb rating and Rotten Tomatoes rating.
-4. Determine the geography:
-   - Use a temporary region mentioned by the user for this request.
-   - Otherwise use `profile.default_region`.
-   - If neither exists, ask for geography before checking availability.
-5. Retrieve current streaming availability by geography, distinguishing subscription, rent, buy, free/ad-supported, and unavailable.
+1. Resolve whether the result is a movie, TV show, season, episode, or ambiguous title.
+2. Prefer exact stable ID matches if the user provides an IMDb/TMDB/TVDB ID.
+3. If multiple plausible matches exist, use media type, year, country, language, cast, or user context. If still ambiguous, show the top few candidates with media type, year, country/language, and creator/director.
+4. Retrieve canonical metadata, IMDb rating, Rotten Tomatoes rating when available, and geography-specific watch providers.
+5. For TV, include status, season count, episode count, original network/streamer, first-air year, and latest/next season or episode when available.
 6. Return a concise table or structured list.
-7. Offer to add one or more results to the watchlist only when that is a natural next step.
 
-Preferred output fields:
+Default output fields:
 
-- Title
-- Year
+- Title/name and media type
+- Year or first-air year
+- Country/language when useful
 - IMDb rating
-- Rotten Tomatoes rating
+- Rotten Tomatoes rating when available
 - Where to watch in selected geography
 - Notes on ambiguity or missing data
 
-### Add Movie
+### Add to watchlist
 
-When the user asks to add a movie to the watchlist:
+When the user asks to add a movie or show:
 
-1. Resolve the movie and fetch basic metadata if missing.
-2. If the movie already exists in `watched`, ask whether to also keep it on the watchlist or skip adding.
-3. If it already exists in `watchlist`, update metadata and `updated_at`; do not duplicate.
-4. Add the normalized record to `watchlist` with `status: "watchlist"`, `added_at`, source IDs, ratings if known, and any user notes.
-5. Save the JSON file and confirm the addition with title and year.
+1. Resolve the title and media type.
+2. Fetch basic metadata if missing.
+3. If it already exists in `watched`, ask whether to also keep it on the watchlist or skip adding.
+4. If it already exists in `watchlist`, update metadata and `updated_at`; do not duplicate.
+5. Store show-level TV records by default unless the user specifies season or episode.
+6. Save the JSON file and confirm with title/name, year, and media type.
 
-### Watched
+### Mark watched
 
-When the user says they watched a movie:
+When the user says they watched a movie, show, season, or episode:
 
-1. Resolve the movie against `watchlist`, `watched`, and fresh lookup results.
-2. Add or update the record in `watched` with `status: "watched"` and `watched_at`.
-3. Move it out of `watchlist` unless the user explicitly asks to keep it there.
-4. Capture optional user rating, notes, favorite status, or rewatch flag if provided; do not require these.
-5. Save the JSON file and confirm.
+1. Resolve the title against `watchlist`, `watched`, and fresh lookup results.
+2. Determine watched level: movie, show, season, or episode.
+3. Add or update the record in `watched` with `status: "watched"` and `watched_at`.
+4. Move matching watchlist items out of `watchlist` unless the user asks to keep them there.
+5. Capture optional rating, notes, rewatch flag, watched geography, and watched platform if provided.
+6. Save the JSON file and confirm.
+
+Examples:
+
+- "I watched Parasite and loved it" -> mark movie watched and infer 5.0 stars.
+- "Finished Shogun season 1, fantastic" -> mark season 1 watched and infer 4.0 stars.
+- "Episode 3 was ok" -> if context identifies the show/season, mark episode 3 watched and infer 3.0 stars.
+
+### Rate title
+
+When the user rates something without saying watched:
+
+1. Resolve the title and media type.
+2. Normalize the rating using the rating rules.
+3. If the title is already in `watched`, update that record.
+4. If it is only in `watchlist`, update that record unless the phrase implies the user watched it; ask only if necessary.
+5. If it is not in any list, create a minimal record under `watched` if the wording implies viewing, otherwise create/update a `ratings` list if supported by the current schema.
 
 ### Remove
 
-When the user asks to remove a movie:
+When the user asks to remove a title:
 
-1. Search all local lists: `watchlist`, `watched`, and any auxiliary lists.
-2. If there is one clear match, remove it from all lists.
-3. If there are multiple matches, ask which one before deleting.
-4. Optionally add a tombstone to `removed` only if useful for preventing immediate re-addition; otherwise deletion is sufficient.
-5. Confirm exactly what was removed.
+1. Search all local lists: `watchlist`, `watched`, `ratings`, and auxiliary lists.
+2. If there is one clear match, remove it from all active lists.
+3. If there are multiple matches across movie/TV or seasons/episodes, ask which one before deleting.
+4. Confirm exactly what was removed.
 
 ### Recommend
 
-Recommendations are optional but should work when the available tools support them.
+For recommendations:
 
-For requests like "recommend movies similar to X" or "recommend genre Y":
+1. Load watched history, user ratings, watchlist, preferences, and default geography.
+2. Prefer highly rated watched titles as positive signals. Treat thumbs down or low ratings as negative signals.
+3. Support filters by media type, genre, country, language, actor, director, creator, network, streamer, production house, franchise, decade, and geography.
+4. Exclude titles already watched unless the user asks for rewatch ideas.
+5. De-prioritize watchlist items unless the user asks what to watch next from the watchlist.
+6. Annotate current streaming availability in the selected geography.
+7. Return 5-10 recommendations with one-sentence rationale each.
 
-1. Load the user's watched list, watchlist, preferences, and default geography.
-2. Build candidate movies from similar-title endpoints, genre searches, director/actor/company overlaps, and reputable curated sources if needed.
-3. Exclude movies already in `watched` unless the user asks for rewatch ideas.
-4. De-prioritize movies already in `watchlist` unless the user asks what to watch next from the watchlist.
-5. Filter or annotate by current streaming availability in the selected geography.
-6. Return 5-10 recommendations with a one-sentence rationale for each.
+### Find by person, company, network, country, language, genre, or franchise
 
-When recommendations are based on sparse history, say so and ask the user to add a few favorites or preferred genres to improve future recommendations.
+Support requests like:
 
-### Find by director, actor, genre, or production house
+- "Find shows created by Phoebe Waller-Bridge."
+- "Find Korean thrillers available in the US."
+- "Find all movies by Studio Ghibli."
+- "Find HBO miniseries I haven't watched."
+- "Find films starring Tabu."
 
-For requests like "find all movies by Greta Gerwig," "movies starring Tabu," or "A24 films":
+Workflow:
 
-1. Identify the entity type: director, actor, genre, production company/house, or ambiguous.
+1. Identify entity type: director, actor, creator, writer, showrunner, genre, production company, network, streamer, country, language, or franchise.
 2. Use a structured source such as TMDB when available.
-3. For people, distinguish directed-by from acted-in when relevant.
-4. Sort results by relevance, release date, popularity, or rating based on the user's request. Default to well-known/relevant first for broad queries.
-5. Optionally annotate which results are already watched or on the watchlist.
-6. If asked, filter by geography-specific streaming availability.
+3. Distinguish acted-in, directed-by, created-by, written-by, network, and production-company relationships.
+4. Sort results by the user's request. Default to relevance/popularity for broad queries.
+5. Annotate watched/watchlist/rating status from local storage.
+6. If requested, filter by geography-specific streaming availability.
 
 ## V2 integrations: Notion and Airtable
 
@@ -141,13 +220,14 @@ If the user asks to use Notion or Airtable:
 ## Safety and reliability
 
 - Do not scrape sites that prohibit automated access when a structured API is available.
-- Do not guess ratings, providers, or availability.
+- Do not guess ratings, providers, TV seasons, episodes, release dates, or availability.
 - Treat streaming availability as time-sensitive and refresh it for each lookup.
 - Keep API keys out of chat transcripts when the runtime supports secure configuration.
-- Do not overwrite or delete the local JSON file without reading the existing content first.
-- For ambiguous titles, clarify before modifying lists.
+- Confirm ambiguous destructive operations.
+- Preserve user privacy: do not sync watch history to third-party services without explicit authorization.
 
 ## Reference files
 
-- `references/schemas.md`: local JSON schema, movie record shape, and output templates.
-- `references/provider-guide.md`: recommended providers, fields to request, and fallback behavior.
+- `references/schemas.md`: local JSON schema, title record shape, TV season/episode tracking, rating fields, and output templates.
+- `references/provider-guide.md`: recommended providers, fields to request, international TV handling, and fallback behavior.
+- `references/rating-guide.md`: rating normalization and natural-language interpretation rules.
