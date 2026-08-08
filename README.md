@@ -1,18 +1,18 @@
-# Movie Library Skill
+# Movie and TV Show Library Skill
 
-A reusable movie discovery and personal watch-tracking skill for Hermes, OpenClaw, and compatible agent runtimes.
+A reusable movie and TV show discovery and personal watch-tracking skill for Hermes, OpenClaw, and compatible agent runtimes.
 
 The skill helps an agent find movie ratings, check where movies stream in the user's geography, maintain a local watchlist and watched list, remove movies from all lists, recommend similar movies, and find films by director, actor, genre, or production house.
 
 ## Capabilities
 
-### Find Movie
+### Find a Movie or TV Show
 
-Input: one movie title or multiple movie titles.
+Input: one movie/tv show title or multiple titles.
 
 Output includes:
 
-- Canonical movie title and year
+- Canonical movie/tv show title and year
 - IMDb rating
 - Rotten Tomatoes rating when available
 - Streaming availability by geography
@@ -25,7 +25,7 @@ Example:
 Find The Dark Knight and tell me IMDb, Rotten Tomatoes, and where I can watch it in the US.
 ```
 
-### Add Movie
+### Add Movie/TV show
 
 Adds a movie to the local watchlist with normalized metadata, stable IDs when available, ratings, streaming availability, and timestamps.
 
@@ -33,12 +33,20 @@ Adds a movie to the local watchlist with normalized metadata, stable IDs when av
 Add Dune: Part Two to my watchlist.
 ```
 
+```text
+Add Star Wars Andor to my watchlist.
+```
+
 ### Watched
 
-Moves a movie from the watchlist to the watched list, or adds it directly to watched history if it was not already in the watchlist.
+Moves a movie/show from the watchlist to the watched list, or adds it directly to watched history if it was not already in the watchlist.
 
 ```text
 Mark Arrival as watched. I watched it yesterday and would rate it 5/5.
+```
+or
+```text
+I watched the first 3 episodes of Seal Team season 1 and enjoyed it.
 ```
 
 ### Remove
@@ -46,17 +54,19 @@ Mark Arrival as watched. I watched it yesterday and would rate it 5/5.
 Removes a matching movie from all active lists. The skill may preserve a minimal tombstone in `removed` so the agent can avoid accidental re-adds or explain history later.
 
 ```text
-Remove Tenet from all lists.
+Remove Passengers (2016) from all lists.
 ```
 
 ### Recommend
 
-Recommends movies similar to a movie, genre, director, actor, production house, or based on watched history and preferences. Recommendations exclude already watched movies unless the user asks otherwise.
+Recommends movies/shows similar to a movie/show, genre, director, actor, production house, or based on watched history and preferences. Recommendations exclude already watched movies unless the user asks otherwise.
 
 ```text
 Recommend movies like Arrival that I have not watched.
-Recommend A24 horror movies available to stream in India.
+Recommend A24 horror movies available to stream in Germany.
 Recommend sci-fi films based on my watched history.
+Recommend shows like Game of Thrones that I haven't seen yet.
+Recommend comedy shows for the family.
 ```
 
 ### Find By
@@ -65,8 +75,10 @@ Finds movies by director, actor, genre, or production house.
 
 ```text
 Find movies directed by Denis Villeneuve.
-Find movies starring Shah Rukh Khan.
+Find movies starring Al Pacino.
 Find movies produced by A24.
+Find shows starring Jason Sudeikis.
+Find dramatic shows available on Hulu in the US.
 ```
 
 ## Runtime assumptions
